@@ -36,12 +36,20 @@ import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alc
  * contêiner e entrado no banco DELE. Cortar na fonte é a única versão que
  * economiza as três coisas.
  *
- * ─── Grupos entram na lista, e isso não muda o produto ──────────────────────
+ * ─── Grupos SAÍRAM da lista (fork ricardoferrari01) ─────────────────────────
  *
- * O CLAUDE.md manda pular o vínculo de CRM quando o chat termina em `@g.us`.
- * Já hoje nenhuma mensagem de grupo vira conversa, contato ou lead: o
- * comportamento visível é idêntico com ou sem esta linha. O que muda é parar
- * de pagar por elas. Quem um dia quiser grupos inverte a chave.
+ * Até aqui `groups: true` cortava a mensagem de grupo NO WAHA — ele nem
+ * processava nem gravava, e `lib/waha/ingest.ts` nunca chegava a ver o
+ * evento. Isso mudou por decisão do dono: grupo agora vira conversa (leitura
+ * e envio pelo CRM), só que sem lead e sem IA — a doutrina de "sem deal
+ * infinito" (docs/prd/03-prd-whatsapp-waha.md §7 W11) continua valendo, só
+ * que decidida em `lib/waha/ingest.ts`, não mais aqui na origem.
+ *
+ * ⚠️ Mudar esta chave numa sessão que já está rodando NÃO basta sozinho: o
+ * WAHA só aplica um `ignore` novo quando a config da sessão é reescrita
+ * (`convergirConfigDaSessao`, chamado em `startSession`) — e reescrever REINICIA
+ * a sessão (linha ~331 acima). Uma sessão já conectada só converge na próxima
+ * vez que passar por `startSession`/reconexão.
  */
 export const CONVERSAS_IGNORADAS = {
   /** Os "estados" que os contatos publicam. Sozinhos eram 69% do arquivo. */
@@ -50,8 +58,8 @@ export const CONVERSAS_IGNORADAS = {
   broadcast: true,
   /** Canais / newsletters. */
   channels: true,
-  /** Ver o parágrafo acima: o CRM já os descarta na entrada. */
-  groups: true,
+  /** Ver o parágrafo acima: grupo agora é conversa de verdade no CRM. */
+  groups: false,
 } as const;
 
 /**

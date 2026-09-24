@@ -63,6 +63,16 @@ const wahaMediaSchema = z.looseObject({
 const wahaKeySchema = z.looseObject({
   remoteJidAlt: texto,
   participantAlt: texto,
+  /**
+   * Quem mandou ESTA mensagem dentro de um GRUPO — o JID completo
+   * (`5511999999999@s.whatsapp.net`), quando a identidade do autor não é
+   * opaca. `participantAlt` é o equivalente para autor `@lid` (mesmo achado da
+   * spec 17 citado acima, do lado do PARTICIPANTE em vez do CHAT). Só entra
+   * aqui porque `participanteDoGrupo` (lib/waha/ingest.ts) o lê com
+   * `.length`/`.endsWith` sem guarda própria — a mesma regra que já valia para
+   * `remoteJidAlt`/`participantAlt`.
+   */
+  participant: texto,
 });
 
 export const wahaPayloadSchema = z.looseObject({

@@ -256,14 +256,25 @@ export function ConversationListItem({
           </div>
         )}
         <div className="flex items-baseline justify-between gap-2">
-          <span
-            className={cn(
-              "truncate text-sm",
-              unread > 0 ? "font-semibold text-text" : "font-medium text-text",
-              c?.is_anonymized && "font-normal italic text-text-muted",
+          <span className="flex min-w-0 items-baseline gap-1">
+            <span
+              className={cn(
+                "truncate text-sm",
+                unread > 0 ? "font-semibold text-text" : "font-medium text-text",
+                c?.is_anonymized && "font-normal italic text-text-muted",
+              )}
+            >
+              {displayName}
+            </span>
+            {/* Sem isto, um grupo tem exatamente a mesma cara de uma conversa
+                1:1 na lista — e "leia e responda grupos" perde a metade do
+                sentido se ninguém consegue DISTINGUIR qual linha é grupo
+                (fork ricardoferrari01). */}
+            {conversation.is_group && (
+              <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px] font-normal">
+                {t("Grupo")}
+              </Badge>
             )}
-          >
-            {displayName}
           </span>
           <span
             className="shrink-0 text-[11px] tabular-nums text-text-subtle"

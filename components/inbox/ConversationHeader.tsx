@@ -166,6 +166,14 @@ export function ConversationHeader({ conversation, onAbrirConversa }: Props) {
         <div className="flex items-center gap-2">
           <ChannelLogo channel={conversation.channel_sessions} size={20} />
           <h2 className="truncate text-sm font-semibold">{displayName}</h2>
+          {/* fork ricardoferrari01: grupo lido/respondido pelo CRM, mas sem
+              lead e sem IA — o selo evita que o atendente trate a conversa
+              como se fosse de UMA pessoa só. */}
+          {conversation.is_group && (
+            <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px] font-normal">
+              {t("Grupo")}
+            </Badge>
+          )}
           <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
             {t(STATUS_LABEL[status] ?? status)}
           </Badge>

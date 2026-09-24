@@ -192,19 +192,23 @@ function semSufixoDeChat(chatId: string): string {
  * Resolve um chatId WAHA em identidade canônica:
  *  - `{number}@c.us` | `@s.whatsapp.net` -> phone E.164 ("+55...")
  *  - `{lid}@lid` -> lid (somente dígitos; número protegido pelo WhatsApp)
- *  - `@g.us` -> group (skip binding CRM — descarte ESPERADO, por doutrina)
+ *  - `@g.us` -> group (vira conversa própria — ver `handleInboundGroup`; NÃO
+ *    passa por `upsertContact`/`fn_upsert_wa_contact`, tem upsert dedicado)
  *  - qualquer outra coisa -> unknown (descarte que DEIXA RASTRO)
  *
  * A quarta variante existe porque este `return` final classificava tudo o que
- * não reconhecia como "grupo", e o ingest descarta grupo: "não sei ler isto"
- * virava "descarta calado" — a mesma família do defeito que sumia com a mensagem
- * digitada no celular (PR #108), inclusive o mesmo sintoma de webhook devolvendo
- * 200 sem erro. `@newsletter` e `@broadcast` já existem em produção e caíam
- * aqui; o próximo formato do WhatsApp reproduziria o caso inteiro.
+ * não reconhecia como "grupo", e antes disto o ingest descartava grupo: "não
+ * sei ler isto" virava "descarta calado" — a mesma família do defeito que
+ * sumia com a mensagem digitada no celular (PR #108), inclusive o mesmo
+ * sintoma de webhook devolvendo 200 sem erro. `@newsletter` e `@broadcast` já
+ * existem em produção e caíam aqui; o próximo formato do WhatsApp reproduziria
+ * o caso inteiro.
  *
- * Grupo e desconhecido têm o MESMO desfecho (não viram contato) e naturezas
- * opostas: um é decisão de produto, o outro é buraco de conhecimento. Só o
- * segundo é anomalia, então só ele emite evento.
+ * Grupo DEIXOU de ser descarte (fork ricardoferrari01 — ver `CONVERSAS_IGNORADAS`
+ * em lib/waha/client.ts e `handleInboundGroup`/`handleOutboundGroupFromUserPhone`
+ * abaixo): vira conversa e mensagem, só que sem lead e sem IA. Desconhecido
+ * continua sendo o único caso que emite `whatsapp.chat_id_not_recognized` — os
+ * dois formatos são anomalia, grupo não é.
  */
 
 export function parseChatId(chatId: string): ChatIdentity {
@@ -451,6 +455,39 @@ export function telefoneAlternativoDe(p: WahaPayload): string | null {
 }
 
 /**
+ * O JID de quem mandou ESTA mensagem dentro de um GRUPO.
+ *
+ * `_data.key.participant` traz o JID completo (`5511999999999@s.whatsapp.net`)
+ * quando o autor não tem identidade opaca; `participantAlt` é o equivalente de
+ * `remoteJidAlt` para autor `@lid`. Nenhum dos dois é o CHAT (`from`, que no
+ * grupo é sempre o `@g.us`) — é a PESSOA que escreveu.
+ */
+function participantJidDoGrupo(p: WahaPayload): string | null {
+  return p._data?.key?.participant ?? p._data?.key?.participantAlt ?? null;
+}
+
+/**
+ * O telefone de quem escreveu dentro do grupo, quando dá para saber.
+ *
+ * Mesma extração de `telefoneAlternativoDe` (sufixo literal — não regex, pelo
+ * mesmo risco de ReDoS documentado lá —, teto de tamanho, faixa E.164 de 8 a
+ * 15 dígitos). Não reaproveita a função porque a origem é outro par de campos.
+ */
+function telefoneDoParticipanteDoGrupo(p: WahaPayload): string | null {
+  const bruto = participantJidDoGrupo(p);
+  if (!bruto) return null;
+  if (bruto.length > 128) return null;
+  if (!bruto.endsWith("@s.whatsapp.net") && !bruto.endsWith("@c.us")) return null;
+  const semSufixo = bruto.slice(0, bruto.indexOf("@"));
+  let digitos = "";
+  for (const ch of semSufixo) {
+    if (ch >= "0" && ch <= "9") digitos += ch;
+  }
+  if (digitos.length < 8 || digitos.length > 15) return null;
+  return `+${digitos}`;
+}
+
+/**
  * Upsert atômico de contato pela identidade canônica. Retorna null se a
  * identidade for de grupo ou a RPC falhar.
  */
@@ -517,6 +554,63 @@ async function upsertConversation(
   } as never);
   if (error) {
     console.error("[waha.ingest] fn_upsert_wa_conversation failed", error.message);
+    return null;
+  }
+  return (data as string) ?? null;
+}
+
+/**
+ * Upsert do CONTATO-GRUPO (fork ricardoferrari01, migration que acompanha esta
+ * mudança).
+ *
+ * Toda conversa exige um `contact_id` (FK NOT NULL, ON DELETE RESTRICT) e um
+ * grupo não é uma pessoa — então o grupo vira um contato PLACEHOLDER: sem
+ * telefone, com `is_group=true` e o nome do grupo (quando souber) em
+ * `display_name`. É deliberadamente um caminho SEPARADO de `upsertContact`:
+ * `fn_upsert_wa_group_contact` reencontra pelo `group_chat_id` (não por
+ * `wa_identity`, que fica NULL para quem não tem telefone nem lid), então não
+ * há como um grupo colidir com uma pessoa nem vice-versa.
+ */
+async function upsertGroupContact(
+  admin: Admin,
+  orgId: string,
+  groupChatId: string,
+  subject: string | null,
+): Promise<string | null> {
+  const { data, error } = await admin.rpc("fn_upsert_wa_group_contact" as never, {
+    p_org: orgId,
+    p_group_chat_id: groupChatId,
+    p_subject: subject,
+  } as never);
+  if (error) {
+    console.error("[waha.ingest] fn_upsert_wa_group_contact failed", error.message);
+    return null;
+  }
+  return (data as string) ?? null;
+}
+
+/**
+ * Upsert da conversa de GRUPO. Mesma forma de `upsertConversation`, RPC
+ * própria porque o conflito é por `(org, contact, session, group_chat_id)` —
+ * a constraint que já existia (`conversations_unique_per_contact_session`,
+ * criada junto com `is_group`/`group_chat_id`) e nunca tinha upsert que a
+ * alcançasse.
+ */
+async function upsertGroupConversation(
+  admin: Admin,
+  orgId: string,
+  contactId: string,
+  sessionId: string,
+  groupChatId: string,
+): Promise<string | null> {
+  const { data, error } = await admin.rpc("fn_upsert_wa_group_conversation" as never, {
+    p_org: orgId,
+    p_contact: contactId,
+    p_session: sessionId,
+    p_group_chat_id: groupChatId,
+  } as never);
+  if (error) {
+    console.error("[waha.ingest] fn_upsert_wa_group_conversation failed", error.message);
     return null;
   }
   return (data as string) ?? null;
@@ -594,7 +688,10 @@ async function handleInbound(
 ): Promise<void> {
   const chatId = p.from ?? "";
   const parsed = parseChatId(chatId);
-  if (parsed.kind === "group") return; // grupos não fazem binding CRM
+  if (parsed.kind === "group") {
+    await handleInboundGroup(admin, session, p, chatId, requestId);
+    return;
+  }
   if (!p.id) return;
   // WAHA emite eventos vazios p/ status/read-receipt/presence — não viram mensagem.
   const texto = bodyOf(p);
@@ -790,6 +887,131 @@ async function handleInbound(
 }
 
 /**
+ * Mensagem de GRUPO recebida (fork ricardoferrari01).
+ *
+ * Doutrina do produto (docs/prd/03-prd-whatsapp-waha.md §7 W11) continua
+ * valendo: grupo NUNCA vira lead nem aciona a IA. Antes disto o jeito de
+ * cumprir a doutrina era descartar a mensagem inteira; agora ela é gravada, só
+ * que este caminho pula de propósito os efeitos de negócio que `handleInbound`
+ * dispara no fim via `aplicarEfeitosPosEntrada` (atribuição de anúncio,
+ * nascimento de lead, despacho do agente) — e também o filtro de "número
+ * interno de aviso", que não faz sentido dentro de um grupo. O que fica é só
+ * registro: contato-placeholder do grupo (`upsertGroupContact`), conversa,
+ * mensagem e o carimbo que a lista do inbox lê (`markConversation`).
+ *
+ * QUEM escreveu dentro do grupo não é a conversa (ela tem UM contato: o
+ * grupo) — é a MENSAGEM. Por isso o nome/telefone do participante vai em
+ * `metadata.group_participant`, e não em `contact_id`: `components/inbox/MessageBubble.tsx`
+ * lê esse campo para rotular a bolha por autor.
+ */
+async function handleInboundGroup(
+  admin: Admin,
+  session: Session,
+  p: WahaPayload,
+  chatId: string,
+  requestId: string,
+): Promise<void> {
+  if (!p.id) return;
+  const texto = bodyOf(p);
+  if (!texto && !mediaUrlOf(p) && !p.hasMedia) return;
+
+  // O NOME do grupo não vem no payload da mensagem — só a API do WAHA sabe, e
+  // este caminho não a consulta (ver o registro de decisão no runbook). Sem
+  // assunto conhecido, `fn_upsert_wa_group_contact` grava um rótulo genérico
+  // que o atendente pode renomear na ficha do contato, como qualquer outro.
+  const contactId = await upsertGroupContact(admin, session.organization_id, chatId, null);
+  if (!contactId) return;
+  const conversationId = await upsertGroupConversation(
+    admin,
+    session.organization_id,
+    contactId,
+    session.id,
+    chatId,
+  );
+  if (!conversationId) return;
+
+  const now = new Date().toISOString();
+  const { data: insertedMessage, error: insertErr } = await admin
+    .from("messages")
+    .insert({
+      organization_id: session.organization_id,
+      conversation_id: conversationId,
+      channel_session_id: session.id,
+      contact_id: contactId,
+      external_id: p.id,
+      type: resolveMessageType(p),
+      direction: "inbound",
+      status: "delivered",
+      ack: p.ack ?? null,
+      body: texto,
+      media_url: mediaUrlOf(p),
+      media_mime: mediaMimeOf(p),
+      sent_via: "external_device",
+      sent_at: dataDoTimestamp(p.timestamp, now),
+      delivered_at: now,
+      metadata: {
+        raw_type: p.type,
+        ack_name: p.ackName,
+        group_participant: {
+          name: notifyNameOf(p),
+          phone: telefoneDoParticipanteDoGrupo(p),
+        },
+      },
+    })
+    .select("id")
+    .maybeSingle();
+
+  // Idempotência: mesma dedup por external_id do caminho 1:1.
+  if (insertErr && insertErr.code !== "23505") {
+    console.error("[waha.ingest] group message insert failed", insertErr.message);
+    return;
+  }
+  if (insertErr?.code === "23505") {
+    logger.info("waha.ingest: inbound de grupo ja ingerido, dedup por external_id", {
+      organization_id: session.organization_id,
+      conversation_id: conversationId,
+      external_id: p.id,
+    });
+    return;
+  }
+
+  await markConversation(
+    admin,
+    session.organization_id,
+    conversationId,
+    "inbound",
+    previewFromMessage(p),
+    dataDoTimestamp(p.timestamp, now),
+  );
+
+  await audit({
+    action: "message.received",
+    organizationId: session.organization_id,
+    resourceType: "message",
+    requestId,
+    metadata: { conversation_id: conversationId, type: p.type, external_id: p.id, is_group: true },
+  });
+
+  // Mídia continua sendo baixada e persistida — é o que a tela mostra ao
+  // ATENDENTE lendo o grupo. Não tem nada a ver com lead nem com IA.
+  if (insertedMessage?.id && mediaUrlOf(p)) {
+    const inboundMessageId = insertedMessage.id;
+    admin
+      .rpc("emit_event" as never, {
+        p_event_type: "media.persist_requested",
+        p_entity_kind: "message",
+        p_entity_id: inboundMessageId,
+        p_payload: { message_id: inboundMessageId, conversation_id: conversationId },
+        p_metadata: { source: "waha_webhook", request_id: requestId },
+        p_organization_id: session.organization_id,
+      } as never)
+      .then(({ error }) => {
+        if (error) console.error("[waha.ingest] emit media.persist_requested failed (grupo)", error.message);
+      });
+  }
+}
+
+/**
  * fromMe=true: operador respondeu direto do WhatsApp dele (não pelo composer).
  * Contato = destinatário (`to`). `from` é o próprio número do operador — nunca
  * vira contato. Registrado como outbound p/ o operador ver o histórico completo.
@@ -814,7 +1036,10 @@ async function handleOutboundFromUserPhone(
   // celular e o CRM não mostra", sem nenhum erro em log: o webhook devolvia 200.
   const chatId = p.to ?? chatIdFromWaMessageId(p.id ?? "") ?? p.from ?? "";
   const parsed = parseChatId(chatId);
-  if (parsed.kind === "group") return;
+  if (parsed.kind === "group") {
+    await handleOutboundGroupFromUserPhone(admin, session, p, chatId, requestId);
+    return;
+  }
   if (!p.id) return;
   if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
@@ -986,6 +1211,117 @@ async function handleOutboundFromUserPhone(
       } as never)
       .then(({ error }) => {
         if (error) console.error("[waha.ingest] emit media.persist_requested failed", error.message);
+      });
+  }
+}
+
+/**
+ * fromMe=true DENTRO DE UM GRUPO (fork ricardoferrari01): o dono respondeu
+ * direto no grupo pelo aparelho, sem passar pelo composer do CRM.
+ *
+ * Mesma doutrina de `handleInboundGroup` — sem lead, sem IA, sem o filtro de
+ * número interno de aviso (não se aplica a grupo) — e o MESMO dedup do
+ * caminho 1:1: se a linha já nasceu pelo composer (o operador respondeu pelo
+ * CRM, e o WAHA ecoou de volta), `jaRegistrada` corta ANTES de criar contato e
+ * conversa, e quem atualiza o status dessa linha é o `handleAck`, não este
+ * caminho.
+ */
+async function handleOutboundGroupFromUserPhone(
+  admin: Admin,
+  session: Session,
+  p: WahaPayload,
+  chatId: string,
+  requestId: string,
+): Promise<void> {
+  if (!p.id) return;
+  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+
+  const bare = bareWaMessageId(p.id);
+  const idCandidates = bare === p.id ? [p.id] : [p.id, bare];
+  const { data: jaRegistrada } = await admin
+    .from("messages")
+    .select("id")
+    .eq("organization_id", session.organization_id)
+    .in("external_id", idCandidates)
+    .limit(1)
+    .maybeSingle();
+  if (jaRegistrada) return;
+
+  const contactId = await upsertGroupContact(admin, session.organization_id, chatId, null);
+  if (!contactId) return;
+  const conversationId = await upsertGroupConversation(
+    admin,
+    session.organization_id,
+    contactId,
+    session.id,
+    chatId,
+  );
+  if (!conversationId) return;
+
+  const now = new Date().toISOString();
+  const { data: insertedOutbound, error: insertErr } = await admin
+    .from("messages")
+    .insert({
+      organization_id: session.organization_id,
+      conversation_id: conversationId,
+      channel_session_id: session.id,
+      contact_id: contactId,
+      external_id: p.id,
+      type: resolveMessageType(p),
+      direction: "outbound",
+      status: "sent",
+      ack: p.ack ?? null,
+      body: bodyOf(p),
+      media_url: mediaUrlOf(p),
+      media_mime: mediaMimeOf(p),
+      sent_via: "external_device",
+      sent_at: dataDoTimestamp(p.timestamp, now),
+      metadata: { raw_type: p.type, fromMe: true, is_group: true },
+    })
+    .select("id")
+    .maybeSingle();
+  if (insertErr && insertErr.code !== "23505") {
+    console.error("[waha.ingest] group outbound insert failed", insertErr.message);
+    return;
+  }
+  if (insertErr?.code === "23505") {
+    logger.info("waha.ingest: outbound de grupo ja ingerido, dedup por external_id", {
+      organization_id: session.organization_id,
+      external_id: p.id,
+    });
+    return;
+  }
+
+  await markConversation(admin, session.organization_id, conversationId, "outbound", previewFromMessage(p), now);
+
+  await audit({
+    action: "message.sent",
+    organizationId: session.organization_id,
+    resourceType: "message",
+    requestId,
+    metadata: {
+      conversation_id: conversationId,
+      type: p.type,
+      external_id: p.id,
+      from_user_phone: true,
+      is_group: true,
+    },
+  });
+
+  if (insertedOutbound?.id && mediaUrlOf(p)) {
+    const outboundMessageId = insertedOutbound.id;
+    admin
+      .rpc("emit_event" as never, {
+        p_event_type: "media.persist_requested",
+        p_entity_kind: "message",
+        p_entity_id: outboundMessageId,
+        p_payload: { message_id: outboundMessageId, conversation_id: conversationId },
+        p_metadata: { source: "waha_webhook", request_id: requestId },
+        p_organization_id: session.organization_id,
+      } as never)
+      .then(({ error }) => {
+        if (error)
+          console.error("[waha.ingest] emit media.persist_requested failed (grupo outbound)", error.message);
       });
   }
 }

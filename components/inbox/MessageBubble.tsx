@@ -114,6 +114,27 @@ export function MessageBubble({
     return null;
   })();
 
+  /**
+   * QUEM, dentro do GRUPO — só para mensagem RECEBIDA (fork ricardoferrari01).
+   *
+   * Numa conversa 1:1 o contato da conversa JÁ diz quem fala — uma bolha
+   * recebida não precisa de rótulo. Num grupo a conversa tem UM contato (o
+   * grupo-placeholder), mas cada mensagem tem um autor diferente; sem isto,
+   * todas as bolhas recebidas pareceriam ter saído da mesma pessoa.
+   *
+   * `lib/waha/ingest.ts` (`handleInboundGroup`) grava o autor em
+   * `metadata.group_participant` — nunca em `contact_id`, que continua sendo o
+   * placeholder do grupo. Mensagem 1:1 nunca tem essa chave, então o rótulo
+   * simplesmente não aparece fora de grupo.
+   */
+  const participanteDoGrupo = (() => {
+    if (isOutbound) return null;
+    const md = message.metadata as { group_participant?: { name?: string | null; phone?: string | null } } | null;
+    const p = md?.group_participant;
+    if (!p) return null;
+    return p.name?.trim() || p.phone?.trim() || t("Participante");
+  })();
+
   return (
     <div
       className={cn(
@@ -216,6 +237,11 @@ export function MessageBubble({
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
             {senderLabel && t(senderLabel)}
+          </div>
+        )}
+        {participanteDoGrupo && (
+          <div className="mb-0.5 text-[11px] font-semibold opacity-80">
+            {participanteDoGrupo}
           </div>
         )}
 
