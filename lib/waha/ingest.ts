@@ -10,6 +10,7 @@
  * 0027 para o modelo de identidade canônica.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { lancarFalhaDeIngestao } from "@/lib/waha/falha-transitoria";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -535,8 +536,7 @@ async function upsertContact(
     p_notify: notifyName,
   } as never);
   if (error) {
-    console.error("[waha.ingest] fn_upsert_wa_contact failed", error.message);
-    return null;
+    lancarFalhaDeIngestao("fn_upsert_wa_contact", error);
   }
   return (data as string) ?? null;
 }
@@ -553,8 +553,7 @@ async function upsertConversation(
     p_session: sessionId,
   } as never);
   if (error) {
-    console.error("[waha.ingest] fn_upsert_wa_conversation failed", error.message);
-    return null;
+    lancarFalhaDeIngestao("fn_upsert_wa_conversation", error);
   }
   return (data as string) ?? null;
 }
@@ -583,8 +582,11 @@ async function upsertGroupContact(
     p_subject: subject,
   } as never);
   if (error) {
-    console.error("[waha.ingest] fn_upsert_wa_group_contact failed", error.message);
-    return null;
+    // Mesma régua de `upsertContact` (ver `falha-transitoria.ts`): sem isto, a
+    // mensagem de GRUPO ficaria de fora da correção que já vale para pessoa —
+    // uma falha passageira do banco faria a mensagem sumir calada, sem
+    // reentrega, exatamente o defeito que a 1.48.0 consertou do outro lado.
+    lancarFalhaDeIngestao("fn_upsert_wa_group_contact", error);
   }
   return (data as string) ?? null;
 }
@@ -610,8 +612,8 @@ async function upsertGroupConversation(
     p_group_chat_id: groupChatId,
   } as never);
   if (error) {
-    console.error("[waha.ingest] fn_upsert_wa_group_conversation failed", error.message);
-    return null;
+    // Ver o comentário em upsertGroupContact: mesma régua de confiabilidade.
+    lancarFalhaDeIngestao("fn_upsert_wa_group_conversation", error);
   }
   return (data as string) ?? null;
 }
@@ -773,8 +775,10 @@ async function handleInbound(
 
   // Idempotência: 23505 = unique (organization_id, external_id) já ingerido.
   if (insertErr && insertErr.code !== "23505") {
-    console.error("[waha.ingest] message insert failed", insertErr.message);
-    return;
+    // Era `console.error` + `return`, e a rota devolvia 200: a mensagem do
+    // cliente sumia. Agora lança — transitória vira 503 (o WAHA reentrega) e
+    // fica marcada para o cron `webhook-replay`. Ver `falha-transitoria.ts`.
+    lancarFalhaDeIngestao("messages.insert inbound", insertErr);
   }
   if (insertErr?.code === "23505") {
     // O `return` está certo — reingerir duplicaria a mensagem do cliente. Mas
@@ -963,8 +967,9 @@ async function handleInboundGroup(
 
   // Idempotência: mesma dedup por external_id do caminho 1:1.
   if (insertErr && insertErr.code !== "23505") {
-    console.error("[waha.ingest] group message insert failed", insertErr.message);
-    return;
+    // Mesma correção do inbound de pessoa (ver o comentário em handleInbound):
+    // sem isto a mensagem de grupo sumia calada numa falha passageira do banco.
+    lancarFalhaDeIngestao("messages.insert inbound grupo", insertErr);
   }
   if (insertErr?.code === "23505") {
     logger.info("waha.ingest: inbound de grupo ja ingerido, dedup por external_id", {
@@ -1141,8 +1146,7 @@ async function handleOutboundFromUserPhone(
     .select("id")
     .maybeSingle();
   if (insertErr && insertErr.code !== "23505") {
-    console.error("[waha.ingest] outbound insert failed", insertErr.message);
-    return;
+    lancarFalhaDeIngestao("messages.insert outbound", insertErr);
   }
   if (insertErr?.code === "23505") {
     // Mesma razão do inbound: dedup é esperado, invisível não.
@@ -1281,8 +1285,8 @@ async function handleOutboundGroupFromUserPhone(
     .select("id")
     .maybeSingle();
   if (insertErr && insertErr.code !== "23505") {
-    console.error("[waha.ingest] group outbound insert failed", insertErr.message);
-    return;
+    // Mesma correção do outbound de pessoa: ver o comentário em upsertGroupContact.
+    lancarFalhaDeIngestao("messages.insert outbound grupo", insertErr);
   }
   if (insertErr?.code === "23505") {
     logger.info("waha.ingest: outbound de grupo ja ingerido, dedup por external_id", {

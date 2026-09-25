@@ -16,7 +16,13 @@ MIGRATION="$PROJECT_DIR/supabase/migrations/20260924230532_0401_grupos_whatsapp_
 [ -f "$MIGRATION" ] || die "Não achei $MIGRATION — confira se o patch foi aplicado (git am) antes de rodar isto."
 
 step "Aplicando a migration de grupos do WhatsApp"
-if psql_run -f "$MIGRATION"; then
+# psql_run NÃO serve aqui: ela roda o psql dentro de um contêiner efêmero que
+# não enxerga o filesystem do host, então um "-f <caminho do host>" dá "No
+# such file or directory" dentro do contêiner mesmo com o arquivo existindo
+# aqui fora. É por isso que reaplicar_baseline() (_common.sh) monta o arquivo
+# como volume em vez de usar psql_run — mesmo padrão aqui.
+if pg_container -i -v "$MIGRATION:/migration.sql:ro" postgres:17-alpine \
+     psql "$(url_do_schema)" -v ON_ERROR_STOP=1 -f /migration.sql; then
   c_grn "✓ migration aplicada — grupos já podem virar conversa no CRM"
 else
   die "A migration falhou — confira a saída acima antes de seguir para o rebuild."
