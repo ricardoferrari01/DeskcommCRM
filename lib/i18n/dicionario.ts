@@ -37,6 +37,10 @@ import type { Idioma } from "./idiomas";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // fork ricardoferrari01: selo de grupo (ConversationHeader/ConversationListItem)
+  // e rótulo de quem escreveu dentro do grupo (MessageBubble).
+  "Grupo": { es: "Grupo" },
+  "Participante": { es: "Participante" },
   "Sobre a empresa": { es: "Sobre la empresa" },
   "Não foi possível carregar o enriquecimento.": { es: "No se pudo cargar el enriquecimiento." },
   "Sem dados de enriquecimento para este contato.": { es: "Sin datos de enriquecimiento para este contacto." },

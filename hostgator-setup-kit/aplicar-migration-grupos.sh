@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Aplica a migration 0401 (grupos do WhatsApp) no banco JÁ instalado.
+# Aplica a migration 0409 (grupos do WhatsApp) no banco JÁ instalado.
 #
 # A rotina normal de atualização (rebuild + `docker compose up -d`) não
 # reaplica schema — só troca a imagem do app. Esta migration é nova e precisa
@@ -12,7 +12,7 @@
 source "$(dirname "$0")/_common.sh"
 enter_project
 
-MIGRATION="$PROJECT_DIR/supabase/migrations/20260924230532_0401_grupos_whatsapp_no_crm.sql"
+MIGRATION="$PROJECT_DIR/supabase/migrations/20260924230532_0409_grupos_whatsapp_no_crm.sql"
 [ -f "$MIGRATION" ] || die "Não achei $MIGRATION — confira se o patch foi aplicado (git am) antes de rodar isto."
 
 step "Aplicando a migration de grupos do WhatsApp"

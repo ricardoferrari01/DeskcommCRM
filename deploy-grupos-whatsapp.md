@@ -12,7 +12,7 @@ grupo em lead e sem a IA responder dentro dele (exatamente como você pediu).
   separado do de pessoa. Continua **sem lead e sem IA** — a mesma regra de
   antes, só que decidida aqui em vez de descartar a mensagem inteira. Quem
   escreveu dentro do grupo fica registrado em cada mensagem.
-- **`supabase/baseline.sql` + `supabase/migrations/0401_...`** — duas colunas
+- **`supabase/baseline.sql` + `supabase/migrations/0409_...`** — duas colunas
   novas em `contacts` (`is_group`, `group_chat_id`) e duas funções novas no
   banco. Testei à mão contra um Postgres 16 limpo: upsert idempotente, nome do
   grupo atualiza quando descoberto, dois grupos não colidem entre si, e o

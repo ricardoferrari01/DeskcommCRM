@@ -1,4 +1,4 @@
--- 0401 — grupos do WhatsApp viram conversa no CRM (fork ricardoferrari01)
+-- 0409 — grupos do WhatsApp viram conversa no CRM (fork ricardoferrari01)
 --
 -- Habilita leitura E ENVIO em grupos, sem tratar como lead e sem a IA
 -- responder — a doutrina de "sem deal infinito" (docs/prd/03-prd-whatsapp-waha.md

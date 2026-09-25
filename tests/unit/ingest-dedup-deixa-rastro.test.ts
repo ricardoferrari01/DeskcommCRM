@@ -89,8 +89,10 @@ describe("dedup do ingest deixa rastro", () => {
       "utf8",
     );
     const trechos = fonte.split('if (insertErr?.code === "23505")');
-    // Sai um trecho antes + um por caminho de dedup (inbound e outbound).
-    expect(trechos.length, "esperado 2 caminhos de dedup no ingest").toBe(3);
+    // Sai um trecho antes + um por caminho de dedup: inbound e outbound de
+    // PESSOA, e — fork ricardoferrari01 — inbound e outbound de GRUPO, que
+    // reusam a mesma dedup por external_id em vez de reingerir.
+    expect(trechos.length, "esperado 4 caminhos de dedup no ingest").toBe(5);
     for (const t of trechos.slice(1)) {
       // Janela larga o bastante para o comentário que explica o porquê: medido,
       // o do inbound sozinho passa de 500 chars e cortava o `logger.info` fora.
