@@ -233,14 +233,48 @@ export class WahaClient {
     return this.sessionAfter(name, "start", 502);
   }
 
-  private async compatibleSession(session: WahaSessionSnapshot): Promise<boolean> {
+  /**
+   * Só a parte que convergência NÃO CONSERTA: identidade de engine.
+   *
+   * Achado ao vivo em 28/09/2026, na primeira sessão a trocar de `ignore`
+   * depois de já criada (groups: true → false): `compatibleSession` completa
+   * (engine + `ignore`) era usada como PRÉ-CONDIÇÃO tanto do `createSession`
+   * quanto do próprio `convergirConfigDaSessao` — e as duas vezes errado, por
+   * razões diferentes:
+   *
+   *   - em `createSession`, exigir o `ignore` já batendo numa sessão que só
+   *     existia (422 "already exists") derrubava a reconexão inteira antes de
+   *     `startSession` sequer tentar convergir — o `ignore` desatualizado é
+   *     justamente o que a convergência existe para corrigir.
+   *   - em `convergirConfigDaSessao`, exigir o `ignore` já batendo como
+   *     condição para RODAR a convergência é a mesma inversão: a função só
+   *     prosseguia (e fazia o PUT) quando o `ignore` já estava certo, ou seja,
+   *     quando não havia nada para converger. Sessão com engine compatível e
+   *     `ignore` desatualizado sempre voltava sem PUT nenhum.
+   *
+   * O resultado prático: `convergirConfigDaSessao` nunca tinha, de fato,
+   * executado seu próprio PUT em produção — nenhum teste cobria esse caminho
+   * (só o de "engine incompatível não converge", que é diferente). Ficou
+   * dormente desde que `CONVERSAS_IGNORADAS` existe, porque até aqui o valor
+   * nunca tinha mudado numa sessão já criada.
+   *
+   * Engine incompatível continua fatal nos dois lugares (WEBJS não veste
+   * NOWEB de propósito nenhum) — só o `ignore` deixou de ser pré-condição.
+   */
+  private async engineCompativel(session: WahaSessionSnapshot): Promise<boolean> {
     if (!session.config) return false;
     const engine = typeof session.engine === "string" ? session.engine : session.engine?.engine;
     const actualEngine = engine ?? (await this.getServerVersion()).engine;
     // O contrato de criação atual é NOWEB. Engine desconhecido não é licença:
     // a operação já foi tentada, mas não podemos confirmar uma sessão incompatível.
     if (actualEngine !== "NOWEB") return false;
-    const ignore = session.config.ignore;
+    return true;
+  }
+
+  /** Engine certo E filtro já convergido — usada só onde a convergência já teve a chance de rodar. */
+  private async compatibleSession(session: WahaSessionSnapshot): Promise<boolean> {
+    if (!(await this.engineCompativel(session))) return false;
+    const ignore = session.config!.ignore;
     if (ignore === undefined) return true; // sessão legada; convergência preserva webhooks
     if (!ignore || typeof ignore !== "object" || Array.isArray(ignore)) return false;
     return Object.entries(CONVERSAS_IGNORADAS).every(([key, value]) =>
@@ -260,7 +294,14 @@ export class WahaClient {
     // 404 não é conflito de create, mesmo que use envelope reconhecido.
     if (!res.ok && res.status !== 422) throw new WahaSessionError("create", res.status);
     const session = await this.sessionAfter(name, "create", res.status);
-    if (!session || !(await this.compatibleSession(session))) throw new WahaSessionError("create", res.status);
+    if (!session) throw new WahaSessionError("create", res.status);
+    // Sessão CRIADA agora (res.ok): nasceu com o `ignore` que mandamos, então
+    // exigir tudo (engine + ignore) é grátis. Sessão que JÁ EXISTIA (conflito
+    // 422 "already exists"): só o engine é pré-condição aqui — o `ignore`
+    // desatualizado é o que `startSession` corrige a seguir, via
+    // `convergirConfigDaSessao` (ver o comentário de `engineCompativel`).
+    const compativel = res.ok ? await this.compatibleSession(session) : await this.engineCompativel(session);
+    if (!compativel) throw new WahaSessionError("create", res.status);
     return { created: res.ok, session };
   }
 
@@ -359,8 +400,12 @@ export class WahaClient {
         return;
       }
       const parsed = sessionSnapshotSchema.safeParse(await atual.json().catch(() => null));
-      if (!parsed.success || parsed.data.name !== name || !(await this.compatibleSession(parsed.data))) {
-        logger.warn("[waha] a sessão respondeu sem identidade/config compatíveis; não vou reescrevê-la", {});
+      // `engineCompativel`, não `compatibleSession`: esta função existe para
+      // corrigir o `ignore` desatualizado, então exigi-lo já correto AQUI
+      // (como pré-condição) nunca deixaria o PUT abaixo rodar — é a mesma
+      // inversão comentada em `engineCompativel`.
+      if (!parsed.success || parsed.data.name !== name || !(await this.engineCompativel(parsed.data))) {
+        logger.warn("[waha] a sessão respondeu sem identidade/engine compatíveis; não vou reescrevê-la", {});
         return;
       }
       const sessao = parsed.data;
