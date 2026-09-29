@@ -295,3 +295,37 @@ describe("pino compartilhado pelo cliente", () => {
     expect(screen.queryByRole("link", { name: /Abrir no mapa/ })).toBeNull();
   });
 });
+
+describe("MessageBubble — encaminhar", () => {
+  async function abrirMenu() {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Opções da mensagem" }));
+  }
+
+  it("oferece Encaminhar em mensagem recebida quando quem lê pode enviar", async () => {
+    render(<MessageBubble message={msg({ direction: "inbound", body: "arte aprovada" })} podeEncaminhar />);
+    await abrirMenu();
+    expect(await screen.findByRole("menuitem", { name: /Encaminhar/ })).toBeInTheDocument();
+  });
+
+  it("sem permissão de envio (leitura do admin, viewer) não há Encaminhar", () => {
+    render(<MessageBubble message={msg({ direction: "inbound", body: "oi" })} />);
+    expect(screen.queryByRole("button", { name: "Opções da mensagem" })).not.toBeInTheDocument();
+  });
+
+  it("não oferece para figurinha, apagada, mídia ainda não baixada nem mensagem otimista", () => {
+    const casos: Array<Partial<Message>> = [
+      { type: "sticker", media_storage_path: "o/c/x.webp", body: null },
+      { revoked_at: "2026-09-29T00:00:00Z" },
+      { type: "image", media_url: "http://waha/x", media_storage_path: null, body: null },
+      { id: "temp-123" },
+    ];
+    for (const over of casos) {
+      const { unmount } = render(
+        <MessageBubble message={msg({ direction: "inbound", body: "oi", ...over })} podeEncaminhar />,
+      );
+      expect(screen.queryByRole("button", { name: "Opções da mensagem" })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+});

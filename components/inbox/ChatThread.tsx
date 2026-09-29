@@ -103,6 +103,8 @@ export function ChatThread({ conversationId, provider, onResponder, dono, contat
   const deleteNote = useDeleteNote(conversationId ?? "");
   const { editar, apagar, ocultar, restaurar } = useAlterarMensagem(conversationId);
   const canManage = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
+  // Encaminhar é envio: agent+ (o viewer só lê). A rota confere de novo.
+  const canWrite = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
   const canalAlteraEnviada = transportaMensagem(provider)
     && capabilitiesOf(provider as ChannelProvider).alteraMensagemEnviada;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
@@ -344,6 +346,7 @@ export function ChatThread({ conversationId, provider, onResponder, dono, contat
                   message={item.data}
                   debugCitations={debugCitations}
                   onResponder={onResponder}
+                  podeEncaminhar={canWrite}
                   // A citada sai da MESMA lista já carregada: buscar no servidor
                   // por cada citação faria uma consulta por bolha. Quando a
                   // citada é antiga demais e ficou fora da página, o fio some —

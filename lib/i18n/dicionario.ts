@@ -11987,6 +11987,24 @@ export const DICIONARIO: Traducoes = {
   "não respondido": { es: "no respondido" },
   "Ligado, cada empresa pode montar roteiros de perguntas que a IA conduz durante a conversa (nome, CPF, interesse…), e as respostas aparecem na ficha do cliente. Desligado, a tela, o menu e o roteiro no atendimento da IA somem.": { es: "Activado, cada empresa puede armar guiones de preguntas que la IA conduce durante la conversación (nombre, CPF, interés…), y las respuestas aparecen en la ficha del cliente. Desactivado, la pantalla, el menú y el guion en la atención de la IA desaparecen." },
   "Recurso não encontrado.": { es: "Recurso no encontrado." },
+  // Encaminhar mensagem (fork SRS)
+  "Encaminhar": { es: "Reenviar" },
+  "Encaminhar mensagem": { es: "Reenviar mensaje" },
+  "Escolha até 5 contatos ou grupos. A mensagem sai do seu número, sem a etiqueta \"Encaminhada\".": { es: "Elija hasta 5 contactos o grupos. El mensaje sale de su número, sin la etiqueta \"Reenviado\"." },
+  "Buscar contato ou grupo…": { es: "Buscar contacto o grupo…" },
+  "Encaminhando…": { es: "Reenviando…" },
+  "Mensagem encaminhada.": { es: "Mensaje reenviado." },
+  "Mensagem encaminhada para {n} conversas.": { es: "Mensaje reenviado a {n} conversaciones." },
+  "Encaminhada para {n} de {total} conversas.": { es: "Reenviado a {n} de {total} conversaciones." },
+  "Não foi possível encaminhar.": { es: "No fue posible reenviar." },
+  "Arquivo": { es: "Archivo" },
+  "Escolha de 1 a 5 conversas diferentes.": { es: "Elija de 1 a 5 conversaciones diferentes." },
+  "Esta mensagem foi apagada e não pode ser encaminhada.": { es: "Este mensaje fue eliminado y no se puede reenviar." },
+  "Este tipo de mensagem não pode ser encaminhado.": { es: "Este tipo de mensaje no se puede reenviar." },
+  "O arquivo desta mensagem ainda está sendo baixado. Tente de novo em instantes.": { es: "El archivo de este mensaje todavía se está descargando. Intente de nuevo en unos instantes." },
+  "Esta mensagem não tem conteúdo para encaminhar.": { es: "Este mensaje no tiene contenido para reenviar." },
+  "Não foi possível copiar o arquivo.": { es: "No fue posible copiar el archivo." },
+  "O WhatsApp recusou o envio.": { es: "WhatsApp rechazó el envío." },
 };
 
 /**

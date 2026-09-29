@@ -3,7 +3,7 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, CaretDown, Check, Checks, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, ArrowBendUpRight, CaretDown, Check, Checks, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -18,6 +18,8 @@ import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
+import { ForwardMessageDialog } from "@/components/inbox/ForwardMessageDialog";
+import { motivoParaNaoEncaminhar } from "@/lib/messaging/encaminhar";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
 import {
   extractCitations,
@@ -46,6 +48,8 @@ interface Props {
   onApagar?: () => Promise<void>;
   onOcultar?: () => Promise<void>;
   onRestaurar?: () => Promise<void>;
+  /** Quem lê pode enviar (agent+). Sem isto — leitura do super-admin, viewer — não há "Encaminhar". */
+  podeEncaminhar?: boolean;
 }
 
 function AckIndicator({ status, t }: { status: string; t: (texto: string) => string }) {
@@ -71,11 +75,13 @@ export function MessageBubble({
   onApagar,
   onOcultar,
   onRestaurar,
+  podeEncaminhar = false,
 }: Props) {
   const [editando, setEditando] = useState(false);
   const [texto, setTexto] = useState(message.body ?? "");
   const [apagando, setApagando] = useState(false);
   const [ocultando, setOcultando] = useState(false);
+  const [encaminhando, setEncaminhando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const salvandoEdicao = useRef(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -116,7 +122,11 @@ export function MessageBubble({
     && agora - new Date(message.sent_at).getTime() <= 15 * 60 * 1000;
   const podeApagar = enviadaPeloAtendente && Boolean(onApagar);
   const podeOcultar = !isOutbound && !apagada && Boolean(ocultaNoCrm ? onRestaurar : onOcultar);
-  const temMenu = Boolean(onResponder || (podeEditar && onEditar) || podeApagar || podeOcultar);
+  // Otimista (`temp-…`) ainda não existe no servidor; o resto das regras mora
+  // em `motivoParaNaoEncaminhar`, a mesma que a rota aplica.
+  const encaminhavel = podeEncaminhar && !message.id.startsWith("temp-")
+    && motivoParaNaoEncaminhar(message) === null;
+  const temMenu = Boolean(onResponder || encaminhavel || (podeEditar && onEditar) || podeApagar || podeOcultar);
   const aiGenerated = isAiGeneratedMessage(message.metadata);
   const citations = extractCitations(message.metadata);
   const showCitationButton =
@@ -243,6 +253,11 @@ export function MessageBubble({
               {onResponder && (
                 <DropdownMenuItem onSelect={() => onResponder(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
+                </DropdownMenuItem>
+              )}
+              {encaminhavel && (
+                <DropdownMenuItem onSelect={() => setEncaminhando(true)}>
+                  <ArrowBendUpRight size={16} aria-hidden />{t("Encaminhar")}
                 </DropdownMenuItem>
               )}
               {podeEditar && onEditar && (
@@ -420,6 +435,9 @@ export function MessageBubble({
           )}
         </div>
       </div>
+      {encaminhando && (
+        <ForwardMessageDialog message={message} open={encaminhando} onOpenChange={setEncaminhando} />
+      )}
       <AlertDialog open={apagando} onOpenChange={setApagando}>
         <AlertDialogContent>
           <AlertDialogHeader>
