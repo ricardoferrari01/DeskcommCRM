@@ -14,8 +14,10 @@ export interface SharedContact {
   phone_number: string;
 }
 
-const VCARD_FN = /^FN:(.+)$/m;
-const VCARD_TEL = /^TEL[^:]*:(.+)$/m;
+const VCARD_FN = /^(?:[A-Za-z0-9-]+\.)?FN:(.+)$/im;
+// O WhatsApp manda `item1.TEL;waid=<numero>:<exibicao>`: o prefixo `item1.` (grupo do vCard)
+// vem antes de TEL. Sem aceita-lo o telefone nunca era lido e o cartao ficava sem numero.
+const VCARD_TEL = /^(?:[A-Za-z0-9-]+\.)?TEL[^:\r\n]*:(.+)$/im;
 
 /** Extrai nome e telefone de um vCard em texto (mensagem inbound). */
 export function parseVcard(body: string | null | undefined): SharedContact | null {
