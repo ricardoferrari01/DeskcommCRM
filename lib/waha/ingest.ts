@@ -33,6 +33,7 @@ import {
   ehNumeroInternoDeAviso,
   registrarMensagemIgnorada,
 } from "@/lib/escalacao/numero-interno-de-aviso";
+import { resolverCitacao } from "@/lib/waha/citacao";
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -750,6 +751,7 @@ async function handleInbound(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
+  const citacao = await resolverCitacao(admin, session.organization_id, conversationId, p, dataDoTimestamp(p.timestamp, now), (m, d) => logger.warn(m, d));
   const { data: insertedMessage, error: insertErr } = await admin
     .from("messages")
     .insert({
@@ -758,6 +760,7 @@ async function handleInbound(
       channel_session_id: session.id,
       contact_id: contactId,
       external_id: p.id,
+      reply_to_message_id: citacao.replyToMessageId,
       type: resolveMessageType(p),
       direction: "inbound",
       status: "delivered",
@@ -768,7 +771,7 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName },
+      metadata: { raw_type: p.type, ack_name: p.ackName, ...citacao.metadata },
     })
     .select("id")
     .maybeSingle();
@@ -935,6 +938,7 @@ async function handleInboundGroup(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
+  const citacao = await resolverCitacao(admin, session.organization_id, conversationId, p, dataDoTimestamp(p.timestamp, now), (m, d) => logger.warn(m, d));
   const { data: insertedMessage, error: insertErr } = await admin
     .from("messages")
     .insert({
@@ -943,6 +947,7 @@ async function handleInboundGroup(
       channel_session_id: session.id,
       contact_id: contactId,
       external_id: p.id,
+      reply_to_message_id: citacao.replyToMessageId,
       type: resolveMessageType(p),
       direction: "inbound",
       status: "delivered",
@@ -956,6 +961,7 @@ async function handleInboundGroup(
       metadata: {
         raw_type: p.type,
         ack_name: p.ackName,
+        ...citacao.metadata,
         group_participant: {
           name: notifyNameOf(p),
           phone: telefoneDoParticipanteDoGrupo(p),
@@ -1124,6 +1130,7 @@ async function handleOutboundFromUserPhone(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
+  const citacao = await resolverCitacao(admin, session.organization_id, conversationId, p, dataDoTimestamp(p.timestamp, now), (m, d) => logger.warn(m, d));
   const { data: insertedOutbound, error: insertErr } = await admin
     .from("messages")
     .insert({
@@ -1132,6 +1139,7 @@ async function handleOutboundFromUserPhone(
       channel_session_id: session.id,
       contact_id: contactId,
       external_id: p.id,
+      reply_to_message_id: citacao.replyToMessageId,
       type: resolveMessageType(p),
       direction: "outbound",
       status: "sent",
@@ -1141,7 +1149,7 @@ async function handleOutboundFromUserPhone(
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
-      metadata: { raw_type: p.type, fromMe: true },
+      metadata: { raw_type: p.type, fromMe: true, ...citacao.metadata },
     })
     .select("id")
     .maybeSingle();
@@ -1263,6 +1271,7 @@ async function handleOutboundGroupFromUserPhone(
   if (!conversationId) return;
 
   const now = new Date().toISOString();
+  const citacao = await resolverCitacao(admin, session.organization_id, conversationId, p, dataDoTimestamp(p.timestamp, now), (m, d) => logger.warn(m, d));
   const { data: insertedOutbound, error: insertErr } = await admin
     .from("messages")
     .insert({
@@ -1271,6 +1280,7 @@ async function handleOutboundGroupFromUserPhone(
       channel_session_id: session.id,
       contact_id: contactId,
       external_id: p.id,
+      reply_to_message_id: citacao.replyToMessageId,
       type: resolveMessageType(p),
       direction: "outbound",
       status: "sent",
@@ -1280,7 +1290,7 @@ async function handleOutboundGroupFromUserPhone(
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
-      metadata: { raw_type: p.type, fromMe: true, is_group: true },
+      metadata: { raw_type: p.type, fromMe: true, is_group: true, ...citacao.metadata },
     })
     .select("id")
     .maybeSingle();
