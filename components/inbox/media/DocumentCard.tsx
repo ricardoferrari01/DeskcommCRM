@@ -11,18 +11,21 @@ interface Props {
   sizeBytes: number | null;
   storagePath: string | null;
   isOutbound: boolean;
+  /** Nome original do arquivo (metadata.filename), quando a mensagem o guarda. */
+  fileName?: string | null;
 }
 
 /** Card de documento: rótulo (PDF/MP4/…), tamanho e download. */
-export function DocumentCard({ messageId, mime, sizeBytes, storagePath, isOutbound }: Props) {
+export function DocumentCard({ messageId, mime, sizeBytes, storagePath, isOutbound, fileName }: Props) {
   const t = useT();
   const label = mediaFileLabel(mime, storagePath);
+  const titulo = fileName ?? label;
   return (
     <a
       href={mediaSrc(messageId)}
       target="_blank"
       rel="noreferrer"
-      aria-label={`${t("Baixar")} ${label} (${formatBytes(sizeBytes)})`}
+      aria-label={`${t("Baixar")} ${titulo} (${formatBytes(sizeBytes)})`}
       className={cn(
         "flex w-60 items-center gap-3 rounded-lg p-2 transition-colors",
         isOutbound
@@ -39,8 +42,8 @@ export function DocumentCard({ messageId, mime, sizeBytes, storagePath, isOutbou
         <FileText size={20} weight="duotone" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{label}</span>
-        <span className="block text-xs opacity-70">{formatBytes(sizeBytes)}</span>
+        <span className="block truncate text-sm font-medium" title={titulo}>{titulo}</span>
+        <span className="block text-xs opacity-70">{fileName ? `${label} · ${formatBytes(sizeBytes)}` : formatBytes(sizeBytes)}</span>
       </span>
       <DownloadSimple size={18} className="shrink-0 opacity-70" aria-hidden />
     </a>

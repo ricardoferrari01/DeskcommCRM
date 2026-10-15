@@ -34,6 +34,7 @@ import {
   registrarMensagemIgnorada,
 } from "@/lib/escalacao/numero-interno-de-aviso";
 import { resolverCitacao } from "@/lib/waha/citacao";
+import { metadadosDeArquivo } from "@/lib/waha/arquivo";
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -771,7 +772,7 @@ async function handleInbound(
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
       delivered_at: now,
-      metadata: { raw_type: p.type, ack_name: p.ackName, ...citacao.metadata },
+      metadata: { raw_type: p.type, ack_name: p.ackName, ...citacao.metadata, ...metadadosDeArquivo(p) },
     })
     .select("id")
     .maybeSingle();
@@ -961,7 +962,7 @@ async function handleInboundGroup(
       metadata: {
         raw_type: p.type,
         ack_name: p.ackName,
-        ...citacao.metadata,
+        ...citacao.metadata, ...metadadosDeArquivo(p),
         group_participant: {
           name: notifyNameOf(p),
           phone: telefoneDoParticipanteDoGrupo(p),
@@ -1149,7 +1150,7 @@ async function handleOutboundFromUserPhone(
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
-      metadata: { raw_type: p.type, fromMe: true, ...citacao.metadata },
+      metadata: { raw_type: p.type, fromMe: true, ...citacao.metadata, ...metadadosDeArquivo(p) },
     })
     .select("id")
     .maybeSingle();
@@ -1290,7 +1291,7 @@ async function handleOutboundGroupFromUserPhone(
       media_mime: mediaMimeOf(p),
       sent_via: "external_device",
       sent_at: dataDoTimestamp(p.timestamp, now),
-      metadata: { raw_type: p.type, fromMe: true, is_group: true, ...citacao.metadata },
+      metadata: { raw_type: p.type, fromMe: true, is_group: true, ...citacao.metadata, ...metadadosDeArquivo(p) },
     })
     .select("id")
     .maybeSingle();

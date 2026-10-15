@@ -7,6 +7,7 @@ import { DocumentCard } from "./DocumentCard";
 import { ImageMedia } from "./ImageMedia";
 import { StickerMedia } from "./StickerMedia";
 import { VideoMedia } from "./VideoMedia";
+import { nomeExibido } from "@/lib/messaging/nome-do-arquivo";
 
 /**
  * Dispatcher de mídia por message.type (Onda 1). Tipo com mídia mas sem
@@ -35,6 +36,7 @@ export function MediaRenderer({ message }: { message: Message }) {
           sizeBytes={message.media_size_bytes}
           storagePath={message.media_storage_path}
           isOutbound={isOutbound}
+          fileName={nomeExibido(message.metadata)}
         />
       );
   }

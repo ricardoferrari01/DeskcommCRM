@@ -379,6 +379,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
                 media_storage_path: uploaded.storage_path,
                 media_mime: uploaded.media_mime,
                 media_size_bytes: uploaded.media_size_bytes,
+                metadata: { filename: pendingFile.name },
               },
               { onSuccess: () => setPendingFile(null) },
             );

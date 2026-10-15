@@ -48,6 +48,7 @@ import { sendTemplateForSession } from "@/lib/channels/meta/send-template-for-se
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
+import { nomeParaEnvio } from "@/lib/messaging/nome-do-arquivo";
 
 type SB = SupabaseClient;
 
@@ -837,7 +838,7 @@ export async function sendMessageHandler(
         if (signErr || !signed?.signedUrl) {
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        const filename = nomeParaEnvio(outboundMetadata.filename, input.media_storage_path, input.media_mime);
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
