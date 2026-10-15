@@ -25,6 +25,7 @@ import {
   extractCitations,
   isAiGeneratedMessage,
 } from "@/lib/ai/citations/types";
+import { TextoComLinks } from "@/components/inbox/TextoComLinks";
 
 interface Props {
   message: Message;
@@ -368,7 +369,7 @@ export function MessageBubble({
             {isOutbound && message.body && (
               <div className="border-t border-current/20 pt-1">
                 <p className="text-[10px] opacity-70">{t("Visível só aqui no CRM")}</p>
-                <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+                <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={message.body ?? ""} /></p>
               </div>
             )}
           </div>
@@ -393,7 +394,7 @@ export function MessageBubble({
             {localizacao && <LocationCard localizacao={localizacao} />}
 
             {message.body && !isContact && !localizacao && (
-              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+              <p className="whitespace-pre-wrap wrap-anywhere leading-snug"><TextoComLinks texto={message.body ?? ""} /></p>
             )}
           </>
         )}
