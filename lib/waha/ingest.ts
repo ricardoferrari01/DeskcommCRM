@@ -35,6 +35,7 @@ import {
 } from "@/lib/escalacao/numero-interno-de-aviso";
 import { resolverCitacao } from "@/lib/waha/citacao";
 import { metadadosDeArquivo } from "@/lib/waha/arquivo";
+import { textoDePagamento } from "./pagamento";
 
 export type Admin = ReturnType<typeof createAdminClient>;
 
@@ -413,6 +414,9 @@ function bodyOf(p: WahaPayload): string | null {
     if (o.vcard) return o.vcard;
     if (o.displayName) return o.displayName;
   }
+  // Chave Pix / pedido de pagamento do WhatsApp Business: mensagem interativa, sem `body`.
+  const pagamento = textoDePagamento(msg);
+  if (pagamento) return pagamento;
   return null;
 }
 
