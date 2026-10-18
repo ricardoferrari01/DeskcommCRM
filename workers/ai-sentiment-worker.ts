@@ -38,6 +38,7 @@ import type { EventRow } from "@/lib/event-log/dispatcher";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMAS, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { agenteAtende, precisaRecuperarLegado } from "@/lib/ai/agents/no-ar";
 
 const SENTIMENT_MODEL = DEFAULT_CLASSIFIER_MODEL; // "anthropic/claude-haiku-4-5"
 const CLASSIFY_TIMEOUT_MS = 5_000;
@@ -212,6 +213,13 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       )
       .eq("organization_id", event.organization_id)
       .is("archived_at", null);
+
+    // Guarda: ha automatico no ar? Sem nenhum agente atendendo (todos pausados ou
+    // despublicados), nao ha o que passar de bot para humano, e o classificador
+    // seguiria cobrando cada mensagem recebida. (Upstream #1936.)
+    if (!(candidatos ?? []).some((c) => agenteAtende(c) || precisaRecuperarLegado(c))) {
+      return { skipped: true, reason: "nenhum_agente_no_ar" };
+    }
 
     const { agente: agent, motivo: motivoDoAgente } = resolverAgenteDaConversa(
       candidatos ?? [],
