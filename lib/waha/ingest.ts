@@ -1057,7 +1057,7 @@ async function handleOutboundFromUserPhone(
     return;
   }
   if (!p.id) return;
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  if (!bodyOf(p) && !mediaUrlOf(p) && !p.hasMedia) return;
   // Idem inbound. Aqui o caso que mais dói é o chatId vazio: é literalmente o
   // defeito do #108 — mensagem que o dono digitou no celular sem `to`, sem id
   // composto e sem `from`. Se voltar a acontecer por um formato novo, agora sai
@@ -1251,7 +1251,7 @@ async function handleOutboundGroupFromUserPhone(
   requestId: string,
 ): Promise<void> {
   if (!p.id) return;
-  if (!p.body && !mediaUrlOf(p) && !p.hasMedia) return;
+  if (!bodyOf(p) && !mediaUrlOf(p) && !p.hasMedia) return;
 
   const bare = bareWaMessageId(p.id);
   const idCandidates = bare === p.id ? [p.id] : [p.id, bare];
