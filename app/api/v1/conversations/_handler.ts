@@ -70,13 +70,16 @@ const ORCAMENTO_DE_IDS_NA_URL = 5_000;
  * aparece porque a busca por conteúdo (`last_message_preview`) continua rodando
  * ao lado, sem depender desta lista.
  */
-function idsQueCabemNaURL(ids: string[]): string[] {
+function idsQueCabemNaURL(
+  ids: string[],
+  orcamento: number = ORCAMENTO_DE_IDS_NA_URL,
+): string[] {
   const cabem: string[] = [];
   let bytes = 0;
   for (const id of ids) {
     // +1 pela vírgula que separa; o último sobra do lado seguro.
     const custo = id.length + 1;
-    if (bytes + custo > ORCAMENTO_DE_IDS_NA_URL) break;
+    if (bytes + custo > orcamento) break;
     cabem.push(id);
     bytes += custo;
   }
@@ -343,13 +346,55 @@ export async function listConversationsHandler(
       // ou o formato do id mudarem.
       .limit(TETO_DE_CONTATOS_NA_BUSCA);
 
+    // ─── A BUSCA TAMBÉM ALCANÇA O TEXTO DE TODAS AS MENSAGENS ─────────────
+    //
+    // Como no WhatsApp: digitar uma palavra acha toda conversa em que ela foi
+    // dita, não só a que a tem na ÚLTIMA mensagem. Mesmo desenho do contato:
+    // uma consulta curta devolve ids de conversa e o predicado os soma ao
+    // resto. Piso de 3 letras (1–2 casariam quase tudo), e as conversas mais
+    // recentes vêm primeiro, porque é a fatia que sobrevive ao corte por bytes.
+    // O índice `idx_messages_body_trgm` (pg_trgm) sustenta o `ilike`.
+    let idsDeConversaPorTexto: string[] = [];
+    if (s.length >= 3) {
+      const termoDoTexto = normalizarTermoDeBusca(q.search)
+        .trim()
+        .replace(/[\\%_]/g, (m) => `\\${m}`);
+      const { data: achadas } = await supabase
+        .from("messages")
+        .select("conversation_id")
+        .eq("organization_id", ctx.organization_id)
+        .is("revoked_at", null)
+        .ilike("body", `%${termoDoTexto}%`)
+        .order("sent_at", { ascending: false })
+        .limit(400);
+      idsDeConversaPorTexto = Array.from(
+        new Set(
+          (achadas ?? [])
+            .map((m) => (m as { conversation_id: string | null }).conversation_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+    }
+
+    // Os dois grupos de ids dividem o MESMO orçamento de bytes da URL: os
+    // contatos cedem até 2.000 B para as conversas achadas pelo texto, e as
+    // conversas usam o que os contatos não gastaram.
+    const bytesDeConversas = idsDeConversaPorTexto.reduce((n, id) => n + id.length + 1, 0);
+    const reservaParaTexto = Math.min(2_000, bytesDeConversas);
     const ids = idsQueCabemNaURL(
       (contatos ?? []).map((c) => (c as { id: string }).id),
+      ORCAMENTO_DE_IDS_NA_URL - reservaParaTexto,
     );
-    if (ids.length > 0) {
-      query = query.or(
-        `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,
-      );
+    const bytesDeContatos = ids.reduce((n, id) => n + id.length + 1, 0);
+    const idsDeConversa = idsQueCabemNaURL(
+      idsDeConversaPorTexto,
+      ORCAMENTO_DE_IDS_NA_URL - bytesDeContatos,
+    );
+    if (ids.length > 0 || idsDeConversa.length > 0) {
+      const partes = [`last_message_preview.ilike.*${s}*`];
+      if (ids.length > 0) partes.push(`contact_id.in.(${ids.join(",")})`);
+      if (idsDeConversa.length > 0) partes.push(`id.in.(${idsDeConversa.join(",")})`);
+      query = query.or(partes.join(","));
     } else {
       // Sem ids casados, um `contact_id.in.()` vazio é SQL inválido no
       // PostgREST — a busca por conteúdo segue sozinha, como antes.
