@@ -34,6 +34,8 @@ interface Props {
   onResponder?: (m: Message) => void;
   /** A mensagem citada por ESTA, quando houver — desenha o fio. */
   citada?: Message | null;
+  /** Clique na citação: leva até a mensagem original, no fio. */
+  onIrParaCitada?: (id: string) => void;
   /**
    * QUEM está lendo a conversa. É o que separa "Você" de "Atendente": a coluna
    * `sent_via='user'` só diz *"um humano digitou no CRM"*, nunca QUAL humano.
@@ -66,11 +68,40 @@ function AckIndicator({ status, t }: { status: string; t: (texto: string) => str
   return null;
 }
 
+const ROTULO_DA_MIDIA: Record<string, string> = {
+  image: "Foto",
+  audio: "Áudio",
+  video: "Vídeo",
+  document: "Documento",
+  sticker: "Figurinha",
+  contact: "Contato",
+};
+
+/**
+ * O que escrever na citação de uma mensagem.
+ *
+ * Mídia não tem texto, e a citação mostrava "(sem texto)": quem respondia a
+ * uma foto, um áudio ou um PDF não via QUAL era. Agora diz o tipo (e a legenda,
+ * ou o nome do arquivo no caso de documento). Texto continua como antes.
+ */
+function descreverCitada(m: Message, t: (chave: string) => string): string | null {
+  const rotulo = ROTULO_DA_MIDIA[m.type as string];
+  if (!rotulo) return null;
+  const meta = (m.metadata ?? {}) as Record<string, unknown>;
+  const nomeDoArquivo = ["filename", "nome_gravado", "file_name"]
+    .map((k) => meta[k])
+    .find((v): v is string => typeof v === "string" && v.trim().length > 0);
+  const legenda = m.type === "contact" || m.type === "sticker" ? "" : (m.body?.trim() ?? "");
+  const detalhe = legenda || (m.type === "document" ? (nomeDoArquivo ?? "") : "");
+  return detalhe ? `${t(rotulo)} · ${detalhe}` : t(rotulo);
+}
+
 export function MessageBubble({
   message,
   debugCitations,
   onResponder,
   citada,
+  onIrParaCitada,
   viewerUserId,
   onEditar,
   onApagar,
@@ -203,6 +234,8 @@ export function MessageBubble({
 
   return (
     <div
+      // Âncora para "ir até a mensagem citada" (ChatThread.irParaMensagem).
+      data-message-id={message.id}
       className={cn(
         "group flex w-full min-w-0 items-center gap-1 px-4 py-1",
         isOutbound ? "justify-end" : "justify-start",
@@ -298,7 +331,22 @@ export function MessageBubble({
         */}
         {citada && (
           <div
+            role={onIrParaCitada ? "button" : undefined}
+            tabIndex={onIrParaCitada ? 0 : undefined}
+            title={onIrParaCitada ? t("Ir para a mensagem original") : undefined}
+            onClick={onIrParaCitada ? () => onIrParaCitada(citada.id) : undefined}
+            onKeyDown={
+              onIrParaCitada
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onIrParaCitada(citada.id);
+                    }
+                  }
+                : undefined
+            }
             className={cn(
+              onIrParaCitada && "cursor-pointer transition-opacity hover:opacity-80",
               "mb-1 rounded-md border-l-2 px-2 py-1 text-xs",
               isOutbound
                 ? "border-primary-foreground/50 bg-primary-foreground/10"
@@ -323,7 +371,7 @@ export function MessageBubble({
                 ? t("Esta mensagem foi apagada")
                 : citada.metadata?.crm_hidden_at
                 ? t("Mensagem ocultada no CRM")
-                : citada.body?.trim() || t("(sem texto)")}
+                : descreverCitada(citada, t) ?? (citada.body?.trim() || t("(sem texto)"))}
             </div>
           </div>
         )}

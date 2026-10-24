@@ -124,6 +124,30 @@ export function ChatThread({ conversationId, provider, onResponder, dono, contat
    */
   const porId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
 
+  /**
+   * Clique na citação: rola até a mensagem original e a destaca um instante,
+   * como no WhatsApp. Se ela está numa página mais antiga ainda não carregada,
+   * carrega as anteriores (até 15) até achar. Não achou: não faz nada.
+   */
+  async function irParaMensagem(id: string) {
+    const achar = () =>
+      scrollerRef.current?.querySelector<HTMLElement>(`[data-message-id="${id}"]`) ?? null;
+    let alvo = achar();
+    let temMais = Boolean(q.hasNextPage);
+    for (let i = 0; !alvo && temMais && i < 15; i++) {
+      const r = await q.fetchNextPage();
+      temMais = Boolean(r.hasNextPage);
+      await new Promise((res) => setTimeout(res, 80));
+      alvo = achar();
+    }
+    if (!alvo) return;
+    alvo.scrollIntoView({ behavior: "smooth", block: "center" });
+    const balao = alvo.querySelector<HTMLElement>('[data-testid="message-bubble"]');
+    if (!balao) return;
+    balao.classList.add("ring-2", "ring-primary/70");
+    window.setTimeout(() => balao.classList.remove("ring-2", "ring-primary/70"), 1800);
+  }
+
   const cartoes: CartaoDaPassagem[] = useMemo(
     () =>
       montarCartoesDaPassagem(passagens, {
@@ -352,6 +376,7 @@ export function ChatThread({ conversationId, provider, onResponder, dono, contat
                   // citada é antiga demais e ficou fora da página, o fio some —
                   // que é melhor que segurar a conversa esperando.
                   citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
+                  onIrParaCitada={irParaMensagem}
                   // Sem isto o balão diz "Você" em toda mensagem digitada no
                   // CRM — inclusive nas do colega, porque `sent_via='user'` só
                   // registra que um humano digitou, nunca qual.
